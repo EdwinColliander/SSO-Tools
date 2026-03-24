@@ -354,12 +354,26 @@ function parseMeta(){
 }
 
 // ── 2. SAML Request ───────────────────────────────────────────
-function parseReq(){
+async function parseReq(){
+  const outEl=document.getElementById('rq-rout');
+  outEl.innerHTML='<span style="color:#555">Parsing…</span>';outEl.style.display='block';
   try{
     const doc=px(tryB64(document.getElementById('rq-rin').value.trim()));
     const r=doc.querySelector('AuthnRequest');if(!r)throw new Error('No AuthnRequest found');
     const np=doc.querySelector('NameIDPolicy');
-    showH('rq-rout',`<div class="info-grid">${row('ID',esc(ga(r,'ID')))}${row('Version',ga(r,'Version'))}${row('IssueInstant',ga(r,'IssueInstant'))}${row('Issuer',esc(gt(doc,'Issuer')))}${row('Destination',esc(ga(r,'Destination')))}${row('ACS URL',esc(ga(r,'AssertionConsumerServiceURL')))}${row('Protocol Binding',ga(r,'ProtocolBinding').split(':').pop())}${row('ForceAuthn',ga(r,'ForceAuthn'))}${row('IsPassive',ga(r,'IsPassive'))}${np?row('NameID Format',ga(np,'Format').split(':').pop()):''}${np?row('AllowCreate',ga(np,'AllowCreate')):''}</div>`);
+    let h=`<div class="info-grid">${row('ID',esc(ga(r,'ID')))}${row('Version',ga(r,'Version'))}${row('IssueInstant',ga(r,'IssueInstant'))}${row('Issuer',esc(gt(doc,'Issuer')))}${row('Destination',esc(ga(r,'Destination')))}${row('ACS URL',esc(ga(r,'AssertionConsumerServiceURL')))}${row('Protocol Binding',ga(r,'ProtocolBinding').split(':').pop())}${row('ForceAuthn',ga(r,'ForceAuthn'))}${row('IsPassive',ga(r,'IsPassive'))}${np?row('NameID Format',ga(np,'Format').split(':').pop()):''}${np?row('AllowCreate',ga(np,'AllowCreate')):''}</div>`;
+    const sigResult=await verifySig(doc);
+    if(sigResult===null){
+      h+=`<hr><div style="font-size:11px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Signature</div><div class="info-grid">${row('Signature','<span style="color:#555">Not present</span>')}</div>`;
+    }else if(sigResult.err){
+      h+=`<hr><div style="font-size:11px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Signature</div><div class="info-grid">${row('Error',`<span class="error">${esc(sigResult.err)}</span>`)}</div>`;
+    }else{
+      const sv=sigResult.sigOk?'<span class="ok">VALID</span>':'<span class="error">INVALID</span>';
+      const dv=sigResult.digestOk===null?'<span style="color:#555">—</span>':sigResult.digestOk?'<span class="ok">MATCH</span>':'<span class="error">MISMATCH</span>';
+      const ce=sigResult.certExpired?`<span class="error">${sigResult.certExpiry} (EXPIRED)</span>`:`<span class="ok">${sigResult.certExpiry}</span>`;
+      h+=`<hr><div style="font-size:11px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Signature</div><div class="info-grid">${row('Signature',sv)}${row('Reference Digest',dv)}${row('Sig Algorithm',esc(sigResult.sigAlg))}${row('Digest Algorithm',esc(sigResult.digestAlg))}${row('Cert CN',esc(sigResult.certCN))}${row('Cert Expiry',ce)}</div>`;
+    }
+    showH('rq-rout',h);
   }catch(e){showH('rq-rout',`<span class="error">${esc(e.message)}</span>`);}
 }
 
