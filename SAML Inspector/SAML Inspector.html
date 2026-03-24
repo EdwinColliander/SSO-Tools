@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAML Inspector</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/forge/1.3.1/forge.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#1c1c1c;color:#c0c0c0;display:flex;height:100vh;overflow:hidden;font-size:13px}
+#sidebar{width:210px;background:#232323;border-right:1px solid #2e2e2e;display:flex;flex-direction:column;flex-shrink:0}
+#sidebar h1{padding:18px 16px 14px;font-size:12px;font-weight:700;color:#fff;letter-spacing:1.5px;text-transform:uppercase;border-bottom:1px solid #2e2e2e}
+#sidebar nav a{display:block;padding:9px 16px;color:#888;text-decoration:none;cursor:pointer;border-left:2px solid transparent;transition:all .1s}
+#sidebar nav a:hover{background:#2a2a2a;color:#bbb}
+#sidebar nav a.active{background:#272727;color:#ddd;border-left-color:#5b8ccc}
+#main{flex:1;overflow-y:auto;padding:28px 32px}
+.page{display:none}.page.active{display:block}
+h2{font-size:16px;font-weight:600;color:#e0e0e0;margin-bottom:3px}
+.subtitle{font-size:12px;color:#555;margin-bottom:20px}
+label{display:block;font-size:11px;color:#666;margin-bottom:3px;margin-top:12px;text-transform:uppercase;letter-spacing:.5px}
+input[type=text],textarea{width:100%;background:#262626;border:1px solid #333;color:#bbb;padding:7px 9px;border-radius:3px;font-size:12px;font-family:inherit;resize:vertical}
+input[type=text]:focus,textarea:focus{outline:none;border-color:#444;color:#ddd}
+textarea{font-family:'Consolas','Courier New',monospace;font-size:11.5px}
+button{padding:7px 16px;background:#2d2d2d;border:1px solid #3a3a3a;color:#aaa;border-radius:3px;cursor:pointer;font-size:12px;font-family:inherit;transition:all .1s}
+button:hover{background:#333;color:#ddd}
+button.primary{background:#2a3d5c;border-color:#3a5070;color:#89b0e0}
+button.primary:hover{background:#324870;color:#aacaf0}
+.output{margin-top:14px;background:#191919;border:1px solid #2e2e2e;border-radius:3px;padding:12px;font-family:'Consolas','Courier New',monospace;font-size:11.5px;color:#9ab;white-space:pre-wrap;word-break:break-all;max-height:460px;overflow-y:auto;display:none}
+.info-grid{display:grid;grid-template-columns:180px 1fr;gap:5px 10px}
+.ik{color:#666;font-size:11.5px;align-self:start;padding-top:1px}
+.iv{color:#bbb;font-family:'Consolas','Courier New',monospace;font-size:11.5px;word-break:break-all}
+.error{color:#c07070}.ok{color:#70a870}.warn{color:#b8a050}
+.copy-btn{padding:3px 9px;font-size:10px;float:right;margin-top:6px;background:#252525;border-color:#333;color:#666}
+.copy-btn:hover{color:#aaa}
+.csec{background:#1f1f1f;border:1px solid #2e2e2e;border-radius:3px;padding:12px;margin-top:10px}
+.csec h4{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+hr{border:none;border-top:1px solid #2a2a2a;margin:16px 0}
+.tool-card{background:#1f1f1f;border:1px solid #2a2a2a;border-radius:4px;padding:16px 18px;margin-bottom:12px}
+.tool-card p{font-size:12px;color:#888;line-height:1.6;margin-top:6px}
+.tool-title{font-size:13px;color:#89b0e0;cursor:pointer;font-weight:600}
+.tool-title:hover{color:#aacaf0}
+.use-cases{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.use-cases span{font-size:10px;background:#252525;border:1px solid #333;color:#666;padding:2px 8px;border-radius:2px}
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h1>SAML Inspector</h1>
+  <nav>
+    <a onclick="nav('home')" id="n-home">Home</a>
+    <a onclick="nav('metadata')" id="n-metadata">Metadata</a>
+    <a onclick="nav('request')" id="n-request">SAML Request</a>
+    <a onclick="nav('response')" id="n-response">SAML Response</a>
+    <a onclick="nav('decode')" id="n-decode">Decode / Encode</a>
+    <a onclick="nav('cert')" id="n-cert">Certificate</a>
+  </nav>
+</div>
+
+<div id="main">
+
+<!-- HOME -->
+<div class="page" id="p-home">
+  <h2>SAML Inspector</h2>
+  <p class="subtitle">A browser-based toolkit for troubleshooting SAML 2.0 federations. No data leaves your machine.</p>
+
+  <div class="tool-card">
+    <div class="tool-title" onclick="nav('metadata')">Metadata →</div>
+    <p>Fetch or parse SP/IdP metadata XML. Useful for verifying that endpoints, bindings, NameID formats and certificates are configured correctly on both sides of a federation. Certificate details (CN, SAN, expiry) are inspected automatically.</p>
+    <div class="use-cases">
+      <span>Endpoint mismatch</span>
+      <span>Certificate expiry</span>
+      <span>Missing SLO</span>
+      <span>NameID format mismatch</span>
+    </div>
+  </div>
+
+  <div class="tool-card">
+    <div class="tool-title" onclick="nav('request')">SAML Request →</div>
+    <p>Parse an AuthnRequest — either raw XML or Base64-encoded. Shows all relevant fields: ID, issuer, destination, ACS URL, NameID policy and binding. Useful for verifying that the SP is sending the correct request to the IdP.</p>
+    <div class="use-cases">
+      <span>Wrong destination URL</span>
+      <span>Wrong ACS URL</span>
+      <span>NameID format mismatch</span>
+      <span>Binding mismatch</span>
+    </div>
+  </div>
+
+  <div class="tool-card">
+    <div class="tool-title" onclick="nav('response')">SAML Response →</div>
+    <p>Parse a SAML Response and its embedded Assertion. Extracts status, subject, conditions, attributes and verifies the XML signature using the certificate embedded in the response. Useful for diagnosing failed logins at the SP side.</p>
+    <div class="use-cases">
+      <span>Signature invalid</span>
+      <span>Wrong audience</span>
+      <span>Missing attributes</span>
+      <span>Expired assertion</span>
+      <span>Wrong NameID</span>
+    </div>
+  </div>
+
+  <div class="tool-card">
+    <div class="tool-title" onclick="nav('decode')">Decode / Encode →</div>
+    <p>Decodes or encodes the SAMLRequest/SAMLResponse transport layer. Redirect Binding compresses the XML with raw DEFLATE before Base64-encoding it — paste the query parameter value directly and decode to inspect the underlying XML. POST Binding uses Base64 only.</p>
+    <div class="use-cases">
+      <span>Inspect requests from browser</span>
+      <span>Read URL-encoded SAMLRequest</span>
+      <span>Craft a manual test request</span>
+    </div>
+  </div>
+
+  <div class="tool-card">
+    <div class="tool-title" onclick="nav('cert')">Certificate →</div>
+    <p>Inspect an X.509 certificate in detail. Paste raw Base64 or a full PEM block. Shows subject, issuer, SAN, validity period, key type and SHA-1/SHA-256 fingerprints. Useful for comparing the certificate in metadata against the one actually used for signing.</p>
+    <div class="use-cases">
+      <span>Fingerprint comparison</span>
+      <span>Expiry check</span>
+      <span>SAN/CN verification</span>
+      <span>Key size audit</span>
+    </div>
+  </div>
+</div>
+
+<!-- METADATA -->
+<div class="page" id="p-metadata">
+  <h2>Metadata</h2><p class="subtitle">Fetch or parse SP/IdP metadata.</p>
+  <label>Fetch from URL</label>
+  <div style="display:flex;gap:8px;align-items:center">
+    <input type="text" id="m-url" placeholder="https://idp.example.com/saml/metadata" style="flex:1">
+    <button class="primary" onclick="fetchMeta()" style="white-space:nowrap;margin-top:0">Fetch</button>
+  </div>
+  <div id="m-fetch-status" style="font-size:11px;color:#555;margin-top:5px;min-height:14px"></div>
+  <label style="margin-top:10px">— or paste XML —</label>
+  <textarea id="m-rin" rows="7" placeholder="<EntityDescriptor ..."></textarea>
+  <div class="btn-row"><button class="primary" onclick="parseMeta()">Parse</button></div>
+  <div class="output" id="m-rout" style="display:none;font-family:inherit"></div>
+</div>
+
+<!-- SAML REQUEST -->
+<div class="page" id="p-request">
+  <h2>SAML Request</h2><p class="subtitle">Parse AuthnRequest messages.</p>
+  <label>AuthnRequest XML or Base64</label>
+  <textarea id="rq-rin" rows="10" placeholder="<samlp:AuthnRequest ..."></textarea>
+  <div class="btn-row"><button class="primary" onclick="parseReq()">Parse</button></div>
+  <div class="output" id="rq-rout" style="display:none;font-family:inherit"></div>
+</div>
+
+<!-- SAML RESPONSE -->
+<div class="page" id="p-response">
+  <h2>SAML Response + Assertion</h2><p class="subtitle">Parse SAML responses and validate signature.</p>
+  <label>SAML Response XML or Base64</label>
+  <textarea id="rs-rin" rows="10" placeholder="<samlp:Response ..."></textarea>
+  <div class="btn-row"><button class="primary" onclick="parseResp()">Parse</button></div>
+  <div class="output" id="rs-rout" style="display:none;font-family:inherit"></div>
+</div>
+
+<!-- DECODE/ENCODE -->
+<div class="page" id="p-decode">
+  <h2>Decode / Encode</h2><p class="subtitle">Redirect Binding: raw DEFLATE + Base64 + URL-encode. POST Binding: Base64 only.</p>
+  <div style="margin-bottom:24px">
+    <h3 style="font-size:13px;color:#aaa;margin-bottom:10px">Decode</h3>
+    <label>SAMLRequest / SAMLResponse value</label>
+    <textarea id="dc-in" rows="4" placeholder="eJy1Vtu... (paste the query parameter value)"></textarea>
+    <div class="btn-row">
+      <button class="primary" onclick="decRedirect()">Decode — Redirect Binding</button>
+      <button onclick="decPost()">Decode — POST Binding</button>
+      <button class="copy-btn" onclick="cp('dc-out')">Copy</button>
+    </div>
+    <div class="output" id="dc-out"></div>
+  </div>
+  <hr>
+  <div>
+    <h3 style="font-size:13px;color:#aaa;margin-bottom:10px">Encode</h3>
+    <label>XML</label>
+    <textarea id="ec-in" rows="6" placeholder="<samlp:AuthnRequest ..."></textarea>
+    <div class="btn-row">
+      <button class="primary" onclick="encRedirect()">Encode — Redirect Binding</button>
+      <button onclick="encPost()">Encode — POST Binding</button>
+      <button class="copy-btn" onclick="cp('ec-out')">Copy</button>
+    </div>
+    <div class="output" id="ec-out"></div>
+  </div>
+</div>
+
+<!-- CERTIFICATE -->
+<div class="page" id="p-cert">
+  <h2>Certificate Inspection</h2><p class="subtitle">Parse X.509 certificates used in SAML metadata and assertions.</p>
+  <label>Certificate (PEM or raw Base64)</label>
+  <textarea id="ct-in" rows="8" placeholder="MIICxDCCAay... (paste raw Base64, or full PEM with headers — both work)"></textarea>
+  <div class="btn-row"><button class="primary" onclick="inspCert()">Inspect</button></div>
+  <div class="output" id="ct-out" style="display:none;font-family:inherit"></div>
+</div>
+
+</div>
+
+<script>
+// ── Navigation ───────────────────────────────────────────────
+function nav(name) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('#sidebar nav a').forEach(a=>a.classList.remove('active'));
+  document.getElementById('p-'+name).classList.add('active');
+  document.getElementById('n-'+name).classList.add('active');
+}
+function show(id,txt){const e=document.getElementById(id);e.textContent=txt;e.style.display='block';}
+function showH(id,html){const e=document.getElementById(id);e.innerHTML=html;e.style.display='block';}
+function cp(id){navigator.clipboard.writeText(document.getElementById(id).textContent||document.getElementById(id).innerText);}
+
+// ── Helpers ──────────────────────────────────────────────────
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function fmtXml(xml){
+  let out='',ind='';
+  xml.replace(/>\s*</g,'><').split('><').forEach((node,i,arr)=>{
+    const s=(i===0?'':'<')+node+(i===arr.length-1?'':'>');
+    if(s.match(/^<\/\w/))ind=ind.slice(2);
+    out+=ind+s+'\n';
+    if(s.match(/^<[^!?][^>]*[^/]>$/)&&!s.match(/^<\?/))ind+='  ';
+  });
+  return out.trim();
+}
+function tryB64(s){try{const d=atob(s.trim());if(d.startsWith('<'))return d;}catch(e){}return s;}
+function px(xml){const d=new DOMParser().parseFromString(xml,'text/xml');const e=d.querySelector('parseerror,parsererror');if(e)throw new Error('XML parse error: '+e.textContent.slice(0,120));return d;}
+const ga=(el,n)=>el?(el.getAttribute(n)||''):'';
+const gt=(doc,sel)=>{const e=doc.querySelector(sel);return e?e.textContent.trim():'';};
+const row=(k,v)=>`<div class="ik">${k}</div><div class="iv">${v||'<span style="color:#444">—</span>'}</div>`;
+
+// ── Exclusive C14N ────────────────────────────────────────────
+function c14nAttrVal(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;').replace(/\t/g,'&#9;').replace(/\n/g,'&#10;').replace(/\r/g,'&#13;');}
+function c14nTextVal(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\r/g,'&#xD;');}
+function c14nNode(node,rendered){
+  rendered=rendered||{};
+  if(node.nodeType===3)return c14nTextVal(node.nodeValue);
+  if(node.nodeType!==1)return '';
+  const myR={...rendered};
+  const tag=node.prefix?`${node.prefix}:${node.localName}`:node.localName;
+  const nsDecls={};
+  const addNs=(pfx,uri)=>{if(!uri)return;const key=pfx?`xmlns:${pfx}`:'xmlns';if(myR[key]!==uri){nsDecls[key]=uri;myR[key]=uri;}};
+  addNs(node.prefix||'',node.namespaceURI);
+  const attrArr=[...node.attributes];
+  for(const a of attrArr){if(a.namespaceURI&&a.namespaceURI!=='http://www.w3.org/2000/xmlns/')addNs(a.prefix||'',a.namespaceURI);}
+  let out=`<${tag}`;
+  for(const k of Object.keys(nsDecls).sort())out+=` ${k}="${c14nAttrVal(nsDecls[k])}"`;
+  const attrs=attrArr.filter(a=>a.namespaceURI!=='http://www.w3.org/2000/xmlns/').sort((a,b)=>{const au=a.namespaceURI||'',bu=b.namespaceURI||'';if(au!==bu)return au<bu?-1:1;return a.localName<b.localName?-1:a.localName>b.localName?1:0;});
+  for(const a of attrs){const n=a.prefix?`${a.prefix}:${a.localName}`:a.localName;out+=` ${n}="${c14nAttrVal(a.value)}"}`;}
+  out+='>';
+  for(const child of node.childNodes)out+=c14nNode(child,myR);
+  out+=`</${tag}>`;
+  return out;
+}
+
+// ── Signature Verification ────────────────────────────────────
+async function verifySig(doc){
+  if(typeof forge==='undefined')return{err:'forge not loaded'};
+  const sig=doc.querySelector('Signature');
+  if(!sig)return null;
+  const certEl=sig.querySelector('X509Certificate');
+  if(!certEl)return{err:'No X509Certificate found in ds:KeyInfo'};
+  let cert;
+  try{const pem=`-----BEGIN CERTIFICATE-----\n${certEl.textContent.trim().replace(/\s+/g,'')}\n-----END CERTIFICATE-----`;cert=forge.pki.certificateFromPem(pem);}
+  catch(e){return{err:'Could not parse embedded certificate: '+e.message};}
+  const signedInfo=sig.querySelector('SignedInfo');
+  if(!signedInfo)return{err:'No SignedInfo element'};
+  const sigValEl=sig.querySelector('SignatureValue');
+  if(!sigValEl)return{err:'No SignatureValue element'};
+  const sigAlg=ga(sig.querySelector('SignatureMethod'),'Algorithm');
+  const digestAlg=ga(sig.querySelector('DigestMethod'),'Algorithm');
+  const c14nSI=c14nNode(signedInfo,{});
+  const isRSA256=sigAlg.includes('rsa-sha256')||sigAlg.includes('RSA-SHA256');
+  const isRSA1=sigAlg.includes('rsa-sha1')||sigAlg.toLowerCase().includes('xmldsig#rsa-sha1');
+  if(!isRSA256&&!isRSA1)return{err:`Unsupported algorithm: ${sigAlg.split('#').pop()}`};
+  const mdSig=isRSA256?forge.md.sha256.create():forge.md.sha1.create();
+  mdSig.update(c14nSI);
+  let sigOk=false;
+  try{const sigBytes=forge.util.decode64(sigValEl.textContent.trim().replace(/\s+/g,''));sigOk=cert.publicKey.verify(mdSig.digest().bytes(),sigBytes);}
+  catch(e){return{err:'Signature math failed: '+e.message};}
+  const ref=sig.querySelector('Reference');
+  const uri=ref?ga(ref,'URI'):'';
+  const digestValEl=sig.querySelector('DigestValue');
+  let digestOk=null;
+  if(uri&&digestValEl){
+    const refId=uri.startsWith('#')?uri.slice(1):uri;
+    const refEl=doc.getElementById(refId)||doc.querySelector(`[ID="${refId}"]`);
+    if(refEl){
+      const clone=refEl.cloneNode(true);
+      const sigInClone=clone.querySelector('Signature');
+      if(sigInClone)sigInClone.parentNode.removeChild(sigInClone);
+      const refC14n=c14nNode(clone,{});
+      const mdD=digestAlg.includes('sha256')?forge.md.sha256.create():forge.md.sha1.create();
+      mdD.update(refC14n);
+      digestOk=(forge.util.encode64(mdD.digest().bytes())===digestValEl.textContent.trim().replace(/\s+/g,''));
+    }
+  }
+  const now=new Date(),certExpired=now>cert.validity.notAfter;
+  return{sigOk,digestOk,sigAlg:sigAlg.split('#').pop(),digestAlg:digestAlg.split('#').pop(),certCN:cert.subject.getField('CN')?.value||'—',certExpiry:cert.validity.notAfter.toISOString(),certExpired};
+}
+
+// ── Certificate helper ────────────────────────────────────────
+function parseCertInfo(b64){
+  if(typeof forge==='undefined')return null;
+  try{
+    const pem=`-----BEGIN CERTIFICATE-----\n${b64.replace(/\s+/g,'')}\n-----END CERTIFICATE-----`;
+    const cert=forge.pki.certificateFromPem(pem);
+    const gf=(attrs,k)=>{const f=attrs.find(a=>a.shortName===k||a.name===k);return f?f.value:null;};
+    const now=new Date(),vt=cert.validity.notAfter,vf=cert.validity.notBefore;
+    const valid=now>=vf&&now<=vt,days=Math.ceil((vt-now)/86400000);
+    const sans=cert.getExtension('subjectAltName');
+    return{cn:gf(cert.subject.attributes,'CN')||'—',o:gf(cert.subject.attributes,'O')||'—',san:sans?sans.altNames.map(n=>n.value||n.ip||'').join(', '):'—',notBefore:vf.toISOString(),notAfter:vt.toISOString(),valid,days};
+  }catch(e){return{err:e.message};}
+}
+
+// ── 1. Metadata ───────────────────────────────────────────────
+async function fetchMeta(){
+  const url=document.getElementById('m-url').value.trim();
+  const st=document.getElementById('m-fetch-status');
+  if(!url)return;
+  st.textContent='Fetching…';st.style.color='#666';
+  try{
+    const r=await fetch(url);
+    if(!r.ok)throw new Error(`HTTP ${r.status} ${r.statusText}`);
+    document.getElementById('m-rin').value=await r.text();
+    st.textContent='Fetched — click Parse to inspect.';st.style.color='#70a870';
+  }catch(e){st.innerHTML=`<span class="error">Error: ${esc(e.message)}. If the IdP blocks CORS, copy-paste the XML manually.</span>`;}
+}
+function parseMeta(){
+  try{
+    const doc=px(document.getElementById('m-rin').value.trim());
+    const ed=doc.querySelector('EntityDescriptor');
+    const type=doc.querySelector('SPSSODescriptor')?'SP':doc.querySelector('IDPSSODescriptor')?'IdP':'Unknown';
+    const svc=[...doc.querySelectorAll('SingleSignOnService,AssertionConsumerService')].map(s=>`${s.localName} · ${ga(s,'Binding').split(':').pop()} · ${esc(ga(s,'Location'))}`);
+    const slo=[...doc.querySelectorAll('SingleLogoutService')].map(s=>`${ga(s,'Binding').split(':').pop()} · ${esc(ga(s,'Location'))}`);
+    const nids=[...doc.querySelectorAll('NameIDFormat')].map(n=>n.textContent.trim().split(':').pop());
+    const reqAttrs=[...doc.querySelectorAll('RequestedAttribute')].map(a=>`${esc(ga(a,'Name'))}${ga(a,'FriendlyName')?' ('+esc(ga(a,'FriendlyName'))+')':''} [${ga(a,'isRequired')==='true'?'required':'optional'}]`);
+    let h=`<div class="info-grid">${row('Entity ID',esc(ga(ed,'entityID')))}${row('Type',type)}${row('Endpoints',svc.join('<br>')||'—')}${row('SLO',slo.join('<br>')||'—')}${row('NameID Formats',nids.join('<br>')||'—')}${reqAttrs.length?row('Requested Attributes',reqAttrs.join('<br>')):''}`;
+    h+=`</div>`;
+    const keyDescs=[...doc.querySelectorAll('KeyDescriptor')];
+    if(keyDescs.length){
+      h+=`<hr>`;
+      for(const kd of keyDescs){
+        const use=ga(kd,'use')||'unspecified';
+        const b64=(kd.querySelector('X509Certificate')?.textContent||'').trim();
+        if(!b64)continue;
+        const info=parseCertInfo(b64);
+        h+=`<div class="csec"><h4>Certificate — ${esc(use)}</h4>`;
+        if(!info){h+=`<div style="color:#555;font-size:11.5px">forge not loaded</div>`;}
+        else if(info.err){h+=`<div class="error">${esc(info.err)}</div>`;}
+        else{
+          const statusTxt=info.valid?`<span class="ok">Valid — ${info.days} days remaining</span>`:`<span class="error">EXPIRED ${Math.abs(info.days)} days ago</span>`;
+          const warn=info.valid&&info.days<30?` <span class="warn">(expires soon)</span>`:'';
+          h+=`<div class="info-grid">${row('CN',esc(info.cn))}${row('O',esc(info.o))}${row('SAN',esc(info.san))}${row('Not Before',info.notBefore)}${row('Not After',info.notAfter)}${row('Status',statusTxt+warn)}</div>`;
+        }
+        h+=`<div style="margin-top:8px;font-size:10px;color:#444;word-break:break-all">${b64.replace(/\s+/g,'').slice(0,80)}…</div></div>`;
+      }
+    }
+    showH('m-rout',h);
+  }catch(e){showH('m-rout',`<span class="error">${esc(e.message)}</span>`);}
+}
+
+// ── 2. SAML Request ───────────────────────────────────────────
+function parseReq(){
+  try{
+    const doc=px(tryB64(document.getElementById('rq-rin').value.trim()));
+    const r=doc.querySelector('AuthnRequest');if(!r)throw new Error('No AuthnRequest found');
+    const np=doc.querySelector('NameIDPolicy');
+    showH('rq-rout',`<div class="info-grid">${row('ID',esc(ga(r,'ID')))}${row('Version',ga(r,'Version'))}${row('IssueInstant',ga(r,'IssueInstant'))}${row('Issuer',esc(gt(doc,'Issuer')))}${row('Destination',esc(ga(r,'Destination')))}${row('ACS URL',esc(ga(r,'AssertionConsumerServiceURL')))}${row('Protocol Binding',ga(r,'ProtocolBinding').split(':').pop())}${row('ForceAuthn',ga(r,'ForceAuthn'))}${row('IsPassive',ga(r,'IsPassive'))}${np?row('NameID Format',ga(np,'Format').split(':').pop()):''}${np?row('AllowCreate',ga(np,'AllowCreate')):''}</div>`);
+  }catch(e){showH('rq-rout',`<span class="error">${esc(e.message)}</span>`);}
+}
+
+// ── 3. SAML Response ──────────────────────────────────────────
+async function parseResp(){
+  const outEl=document.getElementById('rs-rout');
+  outEl.innerHTML='<span style="color:#555">Parsing…</span>';outEl.style.display='block';
+  try{
+    const doc=px(tryB64(document.getElementById('rs-rin').value.trim()));
+    const resp=doc.querySelector('Response');
+    const ass=doc.querySelector('Assertion');
+    const cond=doc.querySelector('Conditions');
+    const scd=doc.querySelector('SubjectConfirmationData');
+    const sc=doc.querySelector('StatusCode');
+    const scv=sc?ga(sc,'Value').split(':').pop():'';
+    const nidEl=ass?ass.querySelector('Subject > NameID'):null;
+    const attrs=[...doc.querySelectorAll('Attribute')].map(a=>`${esc(ga(a,'Name'))}: ${[...a.querySelectorAll('AttributeValue')].map(v=>esc(v.textContent.trim())).join(', ')}`);
+    let h=`<div class="info-grid">`;
+    if(resp){h+=row('Response ID',esc(ga(resp,'ID')));h+=row('IssueInstant',ga(resp,'IssueInstant'));h+=row('Destination',esc(ga(resp,'Destination')));h+=row('InResponseTo',esc(ga(resp,'InResponseTo')));h+=row('Status',`<span class="${scv==='Success'?'ok':'error'}">${scv}</span>`);}
+    if(ass){h+=row('Assertion ID',esc(ga(ass,'ID')));h+=row('Issuer',esc(gt(doc,'Assertion > Issuer')));}
+    if(nidEl){h+=row('NameID',esc(nidEl.textContent.trim()));h+=row('NameID Format',ga(nidEl,'Format').split(':').pop());}
+    if(cond){h+=row('NotBefore',ga(cond,'NotBefore'));h+=row('NotOnOrAfter',ga(cond,'NotOnOrAfter'));}
+    if(scd){h+=row('SubjConf NotOnOrAfter',ga(scd,'NotOnOrAfter'));h+=row('Recipient',esc(ga(scd,'Recipient')));}
+    const aud=doc.querySelector('Audience');if(aud)h+=row('Audience',esc(aud.textContent.trim()));
+    if(attrs.length)h+=row('Attributes',attrs.join('<br>'));
+    h+=`</div>`;
+    const sigResult=await verifySig(doc);
+    if(sigResult===null){
+      h+=`<hr><div style="font-size:11px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Signature</div><div class="info-grid">${row('Signature','<span style="color:#555">Not present</span>')}</div>`;
+    }else if(sigResult.err){
+      h+=`<hr><div style="font-size:11px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Signature</div><div class="info-grid">${row('Error',`<span class="error">${esc(sigResult.err)}</span>`)}</div>`;
+    }else{
+      const sv=sigResult.sigOk?'<span class="ok">VALID</span>':'<span class="error">INVALID</span>';
+      const dv=sigResult.digestOk===null?'<span style="color:#555">—</span>':sigResult.digestOk?'<span class="ok">MATCH</span>':'<span class="error">MISMATCH</span>';
+      const ce=sigResult.certExpired?`<span class="error">${sigResult.certExpiry} (EXPIRED)</span>`:`<span class="ok">${sigResult.certExpiry}</span>`;
+      h+=`<hr><div style="font-size:11px;color:#555;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Signature</div><div class="info-grid">${row('Signature',sv)}${row('Reference Digest',dv)}${row('Sig Algorithm',esc(sigResult.sigAlg))}${row('Digest Algorithm',esc(sigResult.digestAlg))}${row('Cert CN',esc(sigResult.certCN))}${row('Cert Expiry',ce)}</div>`;
+    }
+    showH('rs-rout',h);
+  }catch(e){showH('rs-rout',`<span class="error">${esc(e.message)}</span>`);}
+}
+
+// ── 4. Decode / Encode ────────────────────────────────────────
+function decRedirect(){
+  try{
+    if(typeof pako==='undefined')throw new Error('pako not loaded — requires internet on first use.');
+    let s=document.getElementById('dc-in').value.trim();
+    try{s=decodeURIComponent(s);}catch(e){}
+    const bin=atob(s);const b=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i);
+    show('dc-out',fmtXml(pako.inflateRaw(b,{to:'string'})));
+  }catch(e){show('dc-out','ERROR: '+e.message);}
+}
+function decPost(){
+  try{let s=document.getElementById('dc-in').value.trim();try{s=decodeURIComponent(s);}catch(e){}show('dc-out',fmtXml(atob(s)));}
+  catch(e){show('dc-out','ERROR: '+e.message);}
+}
+function encRedirect(){
+  try{
+    if(typeof pako==='undefined')throw new Error('pako not loaded — requires internet on first use.');
+    const xml=document.getElementById('ec-in').value.trim();
+    const deflated=pako.deflateRaw(new TextEncoder().encode(xml));
+    show('ec-out',encodeURIComponent(btoa(String.fromCharCode(...deflated))));
+  }catch(e){show('ec-out','ERROR: '+e.message);}
+}
+function encPost(){
+  try{show('ec-out',btoa(unescape(encodeURIComponent(document.getElementById('ec-in').value.trim()))));}
+  catch(e){show('ec-out','ERROR: '+e.message);}
+}
+
+// ── 5. Certificate ────────────────────────────────────────────
+function inspCert(){
+  try{
+    if(typeof forge==='undefined')throw new Error('forge not loaded — requires internet on first use.');
+    const b64=document.getElementById('ct-in').value.trim().replace(/-----[^-]+-----/g,'').replace(/\s+/g,'');
+    const pem=`-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----`;
+    const cert=forge.pki.certificateFromPem(pem);
+    const gf=(attrs,k)=>{const f=attrs.find(a=>a.shortName===k||a.name===k);return f?esc(f.value):'—';};
+    const der=forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes();
+    const fp1=forge.md.sha1.create().update(der).digest().toHex().match(/.{2}/g).join(':').toUpperCase();
+    const fp256=forge.md.sha256.create().update(der).digest().toHex().match(/.{2}/g).join(':').toUpperCase();
+    const now=new Date(),vf=cert.validity.notBefore,vt=cert.validity.notAfter;
+    const valid=now>=vf&&now<=vt,days=Math.ceil((vt-now)/86400000);
+    const keyType=cert.publicKey.n?'RSA':(cert.publicKey.curve?'EC':'Unknown');
+    const keySize=cert.publicKey.n?cert.publicKey.n.bitLength():'—';
+    const sans=cert.getExtension('subjectAltName');
+    const sanList=sans?sans.altNames.map(n=>esc(n.value||n.ip||'')).join(', '):'—';
+    const sa=cert.subject.attributes,ia=cert.issuer.attributes;
+    let h=`<div class="csec"><h4>Subject</h4><div class="info-grid">${row('CN',gf(sa,'CN'))}${row('O',gf(sa,'O'))}${row('OU',gf(sa,'OU'))}${row('C',gf(sa,'C'))}</div></div>`;
+    h+=`<div class="csec"><h4>Issuer</h4><div class="info-grid">${row('CN',gf(ia,'CN'))}${row('O',gf(ia,'O'))}</div></div>`;
+    h+=`<div class="csec"><h4>Validity</h4><div class="info-grid">${row('Not Before',vf.toISOString())}${row('Not After',vt.toISOString())}${row('Status',valid?`<span class="ok">Valid — ${days} days remaining</span>`:`<span class="error">EXPIRED ${Math.abs(days)} days ago</span>`)}</div></div>`;
+    h+=`<div class="csec"><h4>Key &amp; Fingerprints</h4><div class="info-grid">${row('Key Type',keyType)}${row('Key Size',keySize+' bits')}${row('SHA-1',fp1)}${row('SHA-256',fp256)}${row('SAN',sanList)}${row('Serial',esc(cert.serialNumber))}</div></div>`;
+    showH('ct-out',h);
+  }catch(e){showH('ct-out',`<span class="error">${esc(e.message)}</span>`);}
+}
+
+nav('home');
+</script>
+</body>
+</html>
